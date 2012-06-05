@@ -1,8 +1,8 @@
 addrgen - Minimal Bitcoin address generator in Python
 
-Created and Licensed Public Domain by Joric/bitcoin-dev June 2012 With minor modifications by David Sterry
+Created and Licensed Public Domain by Joric/bitcoin-dev June 2012 with minor modifications by David Sterry.
 
-This script generates a single Bitcoin address and print it and its private key.
+This script generates a single Bitcoin address and prints it with its private key.
 
 The Bitcoin address is generated using the compressed public key format.
 
