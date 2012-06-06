@@ -43,20 +43,6 @@ class KEY:
         else:
             return ssl.EC_KEY_generate_key(self.k)
 
-    def set_privkey(self, key):
-        self.mb = ctypes.create_string_buffer(key)
-        ssl.d2i_ECPrivateKey(ctypes.byref(self.k), ctypes.byref(ctypes.pointer(self.mb)), len(key))
-
-    def set_pubkey(self, key):
-        self.mb = ctypes.create_string_buffer(key)
-        ssl.o2i_ECPublicKey(ctypes.byref(self.k), ctypes.byref(ctypes.pointer(self.mb)), len(key))
-
-    def get_privkey(self):
-        size = ssl.i2d_ECPrivateKey(self.k, 0)
-        mb_pri = ctypes.create_string_buffer(size)
-        ssl.i2d_ECPrivateKey(self.k, ctypes.byref(ctypes.pointer(mb_pri)))
-        return mb_pri.raw
-
     def get_pubkey(self):
         size = ssl.i2o_ECPublicKey(self.k, 0)
         mb = ctypes.create_string_buffer(size)
@@ -141,11 +127,12 @@ def base58_check_decode(s, version=0):
         raise BaseException('version mismatch')
     return data
 
-def gen_eckey(passphrase=None, secret=None, pkey=None, compressed=False):
+def gen_eckey(passphrase=None, secret=None, pkey=None, compressed=False, rounds=1):
     k = KEY()
     if passphrase:
         secret = passphrase.encode('utf8')
-        secret = hashlib.sha256(secret).digest()
+        for i in xrange(rounds):
+            secret = hashlib.sha256(secret).digest()
     if pkey:
         secret = base58_check_decode(pkey, 128)
         compressed = len(secret) == 33
