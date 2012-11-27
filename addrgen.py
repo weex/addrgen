@@ -154,7 +154,7 @@ def get_addr(k):
 
 def test():
     # random compressed
-    print get_addr(gen_eckey(compressed=True))
+    print get_addr(gen_eckey(compressed=False))
 
     # uncomment these to create addresses via a different method
     # random uncompressed
