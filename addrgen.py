@@ -148,7 +148,7 @@ def get_addr(k):
     addr = base58_check_encode(hash160)
     payload = secret
     if k.compressed:
-        payload = secret + chr(0)
+        payload = secret + chr(1)
     pkey = base58_check_encode(payload, 128)
     return addr, pkey
 
