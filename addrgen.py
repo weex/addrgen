@@ -4,6 +4,7 @@
 import hashlib
 import ctypes
 import ctypes.util
+import sys
 
 ssl = ctypes.cdll.LoadLibrary (ctypes.util.find_library ('ssl') or 'libeay32')
 
@@ -166,6 +167,20 @@ def test():
     # by private key
     #print get_addr(gen_eckey(pkey='5K1HkbYffstTZDuV4riUWMbAMkQh57b8798uoy9pXYUDYeUHe7F'))
     #print get_addr(gen_eckey(pkey='L3ATL5R9Exe1ubuAnHVgNgTKZEUKkDvWYAWkLUCyyvzzxRjtgyFe'))
+
+    # uncomment this to reencode the private keys created by early versions of this script
+    #reencode(sys.argv[1])
+
+def reencode(pkey):
+    payload = base58_check_decode(pkey,128)
+    print payload
+    secret = payload[:-1]
+    print secret
+    payload = secret + chr(1)
+    print payload
+    pkey = base58_check_encode(payload, 128)
+    print pkey
+
 
 if __name__ == '__main__':
     test()
