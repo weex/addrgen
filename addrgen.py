@@ -149,13 +149,13 @@ def get_addr(k):
     addr = base58_check_encode(hash160)
     payload = secret
     if k.compressed:
-        payload = secret + chr(0)
+        payload = secret + chr(1)
     pkey = base58_check_encode(payload, 128)
     return addr, pkey
 
 def test():
     # random compressed
-    print get_addr(gen_eckey(compressed=True))
+    print get_addr(gen_eckey(compressed=False))
 
     # uncomment these to create addresses via a different method
     # random uncompressed
