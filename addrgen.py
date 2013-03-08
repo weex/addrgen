@@ -155,7 +155,7 @@ def get_addr(k):
 
 def test():
     # random compressed
-    print get_addr(gen_eckey(compressed=False))
+    print get_addr(gen_eckey(compressed=True))
 
     # uncomment these to create addresses via a different method
     # random uncompressed
@@ -173,14 +173,11 @@ def test():
 
 def reencode(pkey):
     payload = base58_check_decode(pkey,128)
-    print payload
     secret = payload[:-1]
-    print secret
     payload = secret + chr(1)
-    print payload
     pkey = base58_check_encode(payload, 128)
     print pkey
-
+    get_addr(gen_eckey(pkey))
 
 if __name__ == '__main__':
     test()
