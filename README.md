@@ -6,6 +6,8 @@ This script generates a single Bitcoin address and prints it with its private ke
 
 The Bitcoin address is generated using the compressed public key format.
 
+If you wish to generate Litecoin or other types of addresses, you can use the --otherversion=48 (or other version number) switch which is supported by pywallet and other low-level tools.
+
 If you wish to generate addresses based on a passphrase, a given private key, or some other option look at the commented lines in the test() function.
 
 This script was created for You Can Learn Bitcoin by David R. Sterry available from
