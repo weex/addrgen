@@ -128,34 +128,41 @@ def base58_check_decode(s, version=0):
         raise BaseException('version mismatch')
     return data
 
-def gen_eckey(passphrase=None, secret=None, pkey=None, compressed=False, rounds=1):
+def gen_eckey(passphrase=None, secret=None, pkey=None, compressed=False, rounds=1, version=0):
     k = KEY()
     if passphrase:
         secret = passphrase.encode('utf8')
         for i in xrange(rounds):
             secret = hashlib.sha256(secret).digest()
     if pkey:
-        secret = base58_check_decode(pkey, 128)
+        secret = base58_check_decode(pkey, 128+version)
         compressed = len(secret) == 33
         secret = secret[0:32]
     k.generate(secret)
     k.set_compressed(compressed)
     return k
 
-def get_addr(k):
+def get_addr(k,version=0):
     pubkey = k.get_pubkey()
     secret = k.get_secret()
     hash160 = rhash(pubkey)
-    addr = base58_check_encode(hash160)
+    addr = base58_check_encode(hash160,version)
     payload = secret
     if k.compressed:
         payload = secret + chr(1)
-    pkey = base58_check_encode(payload, 128)
+    pkey = base58_check_encode(payload, 128+version)
     return addr, pkey
 
-def test():
+def reencode(pkey,version=0):
+    payload = base58_check_decode(pkey,128+version)
+    secret = payload[:-1]
+    payload = secret + chr(1)
+    pkey = base58_check_encode(payload, 128+version)
+    print get_addr(gen_eckey(pkey))
+
+def test(otherversion):
     # random compressed
-    print get_addr(gen_eckey(compressed=True))
+    print get_addr(gen_eckey(compressed=True,version=otherversion),version=otherversion)
 
     # uncomment these to create addresses via a different method
     # random uncompressed
@@ -171,13 +178,11 @@ def test():
     # uncomment this to reencode the private keys created by early versions of this script
     #reencode(sys.argv[1])
 
-def reencode(pkey):
-    payload = base58_check_decode(pkey,128)
-    secret = payload[:-1]
-    payload = secret + chr(1)
-    pkey = base58_check_encode(payload, 128)
-    print pkey
-    get_addr(gen_eckey(pkey))
-
 if __name__ == '__main__':
-    test()
+    import optparse
+    parser = optparse.OptionParser(usage="%prog [options]")
+    parser.add_option("--otherversion", dest="otherversion", default=0,
+                    help="Generate address with different version number")
+    (options, args) = parser.parse_args()
+ 
+    test(int(options.otherversion))
