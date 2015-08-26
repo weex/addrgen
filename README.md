@@ -11,4 +11,4 @@ If you wish to generate Litecoin or other types of addresses, you can use the --
 If you wish to generate addresses based on a passphrase, a given private key, or some other option look at the commented lines in the test() function.
 
 This script was created for You Can Learn Bitcoin by David R. Sterry available from
- [Apple's iBookstore](https://itunes.apple.com/us/book/you-can-learn-bitcoin/id569230042?mt=11), [Barnes & Noble's Nook](http://www.barnesandnoble.com/w/you-can-learn-bitcoin-david-r-sterry/1113581990), [Lulu](http://davidsterry.com/youcan) and for bitcoins (oh the irony) from [CoinDL](https://www.coindl.com/page/item/391).
+ [Apple's iBookstore](https://itunes.apple.com/us/book/you-can-learn-bitcoin/id569230042?mt=11), [Barnes & Noble's Nook](http://www.barnesandnoble.com/w/you-can-learn-bitcoin-david-r-sterry/1113581990), and  [Lulu](http://davidsterry.com/youcan).
