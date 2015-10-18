@@ -6,7 +6,9 @@ This script generates a single Bitcoin address using the compressed public key f
 
     python addrgen.py
 
-### Generate Litecoin or other types of addresses, you can use the --otherversion=48 switch which is supported by pywallet and other Bitcoin wallet tools.
+### Generating other types of addresses
+
+Supply the version number for your desired address  with the --otherversion switch. (supported by pywallet at least)
 
     python addrgen.py --otherversion=48
 
