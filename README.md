@@ -6,6 +6,12 @@ This script generates a single Bitcoin address using the compressed public key f
 
     python addrgen.py
 
+### Mac OS X
+
+For some reason, the script segfaults on OS X unless it's run in in 32-bit mode. Instead, those on OS X should run:
+
+    bash addrgen.sh
+
 ### Generating other types of addresses
 
 Supply the version number for your desired address  with the --otherversion switch. (supported by pywallet at least)
