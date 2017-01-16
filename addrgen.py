@@ -15,6 +15,17 @@ def check_result (val, func, args):
 ssl.EC_KEY_new_by_curve_name.restype = ctypes.c_void_p
 ssl.EC_KEY_new_by_curve_name.errcheck = check_result
 
+class VoidP(ctypes.c_void_p) :
+    pass
+
+ssl.BN_bin2bn.restype = VoidP
+ssl.BN_new.restype = VoidP
+ssl.EC_KEY_generate_key.restype = VoidP
+ssl.EC_KEY_get0_group.restype = VoidP
+ssl.EC_KEY_get0_private_key.restype = VoidP
+ssl.BN_CTX_new.restype = VoidP
+ssl.EC_POINT_new.restype = VoidP
+
 class KEY:
     def __init__(self):
         NID_secp256k1 = 714
