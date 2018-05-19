@@ -12,6 +12,10 @@ For some reason, the script segfaults on OS X unless it's run in in 32-bit mode.
 
     bash addrgen.sh
 
+or run a compatible python version if you have troubles with bash script above:
+
+    arch -32 /System/Library/Frameworks/Python.framework/Versions/2.7/bin/python addrgen.py 
+
 ### Generating other types of addresses
 
 Supply the version number for your desired address  with the --otherversion switch. (supported by pywallet at least)
