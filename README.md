@@ -2,6 +2,8 @@
 
 This script generates a single Bitcoin address using the compressed public key format and prints it with its private key.
 
+The idea was to have the smallest source code possible so that it would be easy to audit and hard for anyone to hide anything nepharious. If you like this idea, you may want to check out [TweetNaCl](http://tweetnacl.cr.yp.to/software.html).
+
 ### Usage 
 
     python addrgen.py
