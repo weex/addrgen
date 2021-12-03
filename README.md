@@ -8,16 +8,6 @@ The idea was to have the smallest source code possible so that it would be easy 
 
     python addrgen.py
 
-### Mac OS X
-
-For some reason, the script segfaults on OS X unless it's run in in 32-bit mode. Instead, those on OS X should run:
-
-    bash addrgen.sh
-
-or run a compatible python version if you have troubles with bash script above:
-
-    arch -32 /System/Library/Frameworks/Python.framework/Versions/2.7/bin/python addrgen.py 
-
 ### Generating other types of addresses
 
 Supply the version number for your desired address  with the --otherversion switch. (supported by pywallet at least)
