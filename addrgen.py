@@ -1,15 +1,54 @@
 #!/usr/bin/env python3
 # Joric/bitcoin-dev, june 2012, public domain
 #
-# secp256k1 keys come from libsecp256k1 via coincurve. RIPEMD-160 comes from
-# hashlib when OpenSSL provides it, and from ripemd160.py otherwise.
+# New private keys come from the OS CSPRNG. coincurve/libsecp256k1 only
+# derives the public key. RIPEMD-160 comes from hashlib when OpenSSL
+# provides it, and from ripemd160.py otherwise.
 
 import hashlib
+import os
 import sys
+
+try:
+    import secrets
+except ImportError:
+    secrets = None
 
 from coincurve import PrivateKey
 
 from ripemd160 import ripemd160
+
+# Order of secp256k1 (SEC 2). A private key is valid iff 1 <= k < n.
+SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
+def os_random_bytes(n):
+    """Bytes from the OS CSPRNG. secrets.token_bytes, else os.urandom."""
+    token_bytes = getattr(secrets, 'token_bytes', None) if secrets is not None else None
+    if token_bytes is not None:
+        return token_bytes(n)
+    return os.urandom(n)
+
+def secret_in_range(raw):
+    """True when raw is a 32-byte scalar in [1, n-1]."""
+    if not isinstance(raw, (bytes, bytearray)) or len(raw) != 32:
+        return False
+    value = int.from_bytes(raw, 'big')
+    return 1 <= value < SECP256K1_ORDER
+
+def random_secret():
+    """New private key from the OS CSPRNG, retried until it is in [1, n-1].
+
+    Rejection sampling (not reduction modulo n) so the result is unbiased.
+    A draw outside the range is vanishingly rare; giving up means the RNG
+    is not returning usable bytes.
+    """
+    for _ in range(128):
+        raw = os_random_bytes(32)
+        if len(raw) != 32:
+            raise RuntimeError('OS CSPRNG returned %d bytes, expected 32' % len(raw))
+        if secret_in_range(raw):
+            return raw
+    raise RuntimeError('OS CSPRNG failed to produce a private key in [1, n-1]')
 
 class KEY:
     def __init__(self):
@@ -17,14 +56,15 @@ class KEY:
         self.compressed = False
 
     def generate(self, secret=None):
-        if secret:
-            if isinstance(secret, bytearray):
-                secret = bytes(secret)
-            if not isinstance(secret, bytes) or len(secret) != 32:
-                raise ValueError('secret must be 32 bytes')
-            self.private_key = PrivateKey(secret)
-            return self.private_key
-        self.private_key = PrivateKey()
+        # Fresh keys are drawn here. coincurve only multiplies the generator
+        # by that scalar; it is not asked to mint the private key.
+        if not secret:
+            secret = random_secret()
+        if isinstance(secret, bytearray):
+            secret = bytes(secret)
+        if not isinstance(secret, bytes) or len(secret) != 32:
+            raise ValueError('secret must be 32 bytes')
+        self.private_key = PrivateKey(secret)
         return self.private_key
 
     def get_pubkey(self):
