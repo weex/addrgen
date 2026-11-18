@@ -26,6 +26,58 @@ ssl.EC_KEY_get0_private_key.restype = VoidP
 ssl.BN_CTX_new.restype = VoidP
 ssl.EC_POINT_new.restype = VoidP
 
+# Order of the secp256k1 curve. A private scalar must satisfy 1 <= d < n.
+SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
+def _is_bytestring(buf):
+    # Python 2 keys are str. Python 3 keys are bytes. Reject text either way.
+    if sys.version_info[0] >= 3:
+        return isinstance(buf, bytes)
+    return isinstance(buf, str)
+
+def _be_int(buf):
+    value = 0
+    for byte in buf:
+        if isinstance(byte, int):
+            value = (value << 8) | byte
+        else:
+            value = (value << 8) | ord(byte)
+    return value
+
+def validate_privkey(secret):
+    """Reject a private key that is not exactly 32 bytes in [1, n-1].
+
+    The integer value is only used for the range check. The original buffer
+    is returned unchanged so leading zero bytes stay in the 32-byte scalar.
+    """
+    if not _is_bytestring(secret) or len(secret) != 32:
+        if _is_bytestring(secret):
+            raise ValueError('private key must be exactly 32 bytes, got %d' % len(secret))
+        raise ValueError('private key must be exactly 32 bytes')
+    scalar = _be_int(secret)
+    if scalar < 1 or scalar >= SECP256K1_ORDER:
+        raise ValueError('private key out of range (must satisfy 1 <= scalar < secp256k1 order)')
+    return secret
+
+def wif_payload_to_secret(payload):
+    """Split a decoded WIF payload into a 32-byte scalar and compression flag.
+
+    Accepts 32 bytes (uncompressed) or 33 bytes ending in 0x01 (compressed).
+    Other lengths are rejected so the scalar is never truncated or padded.
+    """
+    if not _is_bytestring(payload):
+        raise ValueError('WIF private key must be exactly 32 bytes')
+    if len(payload) == 33:
+        flag = payload[-1]
+        if not isinstance(flag, int):
+            flag = ord(flag)
+        if flag != 1:
+            raise ValueError('compressed WIF private key must end with 0x01')
+        return validate_privkey(payload[:32]), True
+    if len(payload) == 32:
+        return validate_privkey(payload), False
+    raise ValueError('WIF private key must be exactly 32 bytes (or 33 bytes ending with 0x01), got %d' % len(payload))
+
 class KEY:
     def __init__(self):
         NID_secp256k1 = 714
@@ -40,7 +92,10 @@ class KEY:
         self.k = None
 
     def generate(self, secret=None):
-        if secret:
+        if secret is not None:
+            # Check length and range before BN_bin2bn, which reads exactly
+            # 32 bytes. A short buffer would be read past; a long one truncated.
+            secret = validate_privkey(secret)
             self.prikey = secret
             priv_key = ssl.BN_bin2bn(secret, 32, ssl.BN_new())
             group = ssl.EC_KEY_get0_group(self.k)
@@ -146,9 +201,11 @@ def gen_eckey(passphrase=None, secret=None, pkey=None, compressed=False, rounds=
         for i in xrange(rounds):
             secret = hashlib.sha256(secret).digest()
     if pkey:
-        secret = base58_check_decode(pkey, 128+version)
-        compressed = len(secret) == 33
-        secret = secret[0:32]
+        payload = base58_check_decode(pkey, 128+version)
+        secret, compressed = wif_payload_to_secret(payload)
+    elif secret is not None:
+        # Supplied secret, or the digest produced by the passphrase loop above.
+        secret = validate_privkey(secret)
     k.generate(secret)
     k.set_compressed(compressed)
     return k
