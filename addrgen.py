@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Joric/bitcoin-dev, june 2012, public domain
 
 import hashlib
@@ -62,11 +62,11 @@ class KEY:
         return mb.raw
 
     def get_secret(self):
-        bn = ssl.EC_KEY_get0_private_key(self.k);
-        bytes = (ssl.BN_num_bits(bn) + 7) / 8
-        mb = ctypes.create_string_buffer(bytes)
-        n = ssl.BN_bn2bin(bn, mb);
-        return mb.raw.rjust(32, chr(0))
+        bn = ssl.EC_KEY_get0_private_key(self.k)
+        size = (ssl.BN_num_bits(bn) + 7) // 8
+        mb = ctypes.create_string_buffer(size)
+        ssl.BN_bn2bin(bn, mb)
+        return mb.raw.rjust(32, b'\x00')
 
     def set_compressed(self, compressed):
         self.compressed = compressed
@@ -102,10 +102,10 @@ def base58_decode(s):
     return n
 
 def base58_encode_padded(s):
-    res = base58_encode(int('0x' + s.encode('hex'), 16))
+    res = base58_encode(int.from_bytes(s, 'big'))
     pad = 0
     for c in s:
-        if c == chr(0):
+        if c == 0:
             pad += 1
         else:
             break
@@ -118,24 +118,25 @@ def base58_decode_padded(s):
             pad += 1
         else:
             break
-    h = '%x' % base58_decode(s)
-    if len(h) % 2:
-        h = '0' + h
-    res = h.decode('hex')
-    return chr(0) * pad + res
+    n = base58_decode(s)
+    if n:
+        res = n.to_bytes((n.bit_length() + 7) // 8, 'big')
+    else:
+        res = b''
+    return b'\x00' * pad + res
 
 def base58_check_encode(s, version=0):
-    vs = chr(version) + s
+    vs = bytes([version]) + s
     check = dhash(vs)[:4]
     return base58_encode_padded(vs + check)
 
 def base58_check_decode(s, version=0):
     k = base58_decode_padded(s)
-    v0, data, check0 = k[0], k[1:-4], k[-4:]
+    v0, data, check0 = k[0:1], k[1:-4], k[-4:]
     check1 = dhash(v0 + data)[:4]
     if check0 != check1:
         raise BaseException('checksum error')
-    if version != ord(v0):
+    if version != v0[0]:
         raise BaseException('version mismatch')
     return data
 
@@ -143,7 +144,7 @@ def gen_eckey(passphrase=None, secret=None, pkey=None, compressed=False, rounds=
     k = KEY()
     if passphrase:
         secret = passphrase.encode('utf8')
-        for i in xrange(rounds):
+        for i in range(rounds):
             secret = hashlib.sha256(secret).digest()
     if pkey:
         secret = base58_check_decode(pkey, 128+version)
@@ -160,14 +161,14 @@ def get_addr(k,version=0):
     addr = base58_check_encode(hash160,version)
     payload = secret
     if k.compressed:
-        payload = secret + chr(1)
+        payload = secret + b'\x01'
     pkey = base58_check_encode(payload, 128+version)
     return addr, pkey
 
 def reencode(pkey,version=0):
     payload = base58_check_decode(pkey,128+version)
     secret = payload[:-1]
-    payload = secret + chr(1)
+    payload = secret + b'\x01'
     pkey = base58_check_encode(payload, 128+version)
     print(get_addr(gen_eckey(pkey)))
 
@@ -177,14 +178,14 @@ def test(otherversion):
 
     # uncomment these to create addresses via a different method
     # random uncompressed
-    #print get_addr(gen_eckey())
+    #print(get_addr(gen_eckey()))
     # by secret
-    #print get_addr(gen_eckey(secret=('%064x' % 0xdeadbabe).decode('hex')))
+    #print(get_addr(gen_eckey(secret=bytes.fromhex('%064x' % 0xdeadbabe))))
     # by passphrase
-    #print get_addr(gen_eckey(passphrase='Satoshi Nakamoto'))
+    #print(get_addr(gen_eckey(passphrase='Satoshi Nakamoto')))
     # by private key
-    #print get_addr(gen_eckey(pkey='5K1HkbYffstTZDuV4riUWMbAMkQh57b8798uoy9pXYUDYeUHe7F'))
-    #print get_addr(gen_eckey(pkey='L3ATL5R9Exe1ubuAnHVgNgTKZEUKkDvWYAWkLUCyyvzzxRjtgyFe'))
+    #print(get_addr(gen_eckey(pkey='5K1HkbYffstTZDuV4riUWMbAMkQh57b8798uoy9pXYUDYeUHe7F')))
+    #print(get_addr(gen_eckey(pkey='L3ATL5R9Exe1ubuAnHVgNgTKZEUKkDvWYAWkLUCyyvzzxRjtgyFe')))
 
     # uncomment this to reencode the private keys created by early versions of this script
     #reencode(sys.argv[1])
