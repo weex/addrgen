@@ -102,7 +102,9 @@ def base58_decode(s):
     return n
 
 def base58_encode_padded(s):
-    res = base58_encode(int('0x' + s.encode('hex'), 16))
+    # Empty input is not a hex literal. int('0x0') is 0, and base58_encode(0)
+    # is '', so the leading-zero count below is the whole encoding.
+    res = base58_encode(int('0x' + (s.encode('hex') or '0'), 16))
     pad = 0
     for c in s:
         if c == chr(0):
@@ -118,10 +120,16 @@ def base58_decode_padded(s):
             pad += 1
         else:
             break
-    h = '%x' % base58_decode(s)
-    if len(h) % 2:
-        h = '0' + h
-    res = h.decode('hex')
+    n = base58_decode(s)
+    # '%x' % 0 is '0'. Padding that odd length to '00' invents a 0x00 on top
+    # of the leading '1' bytes. Zero has no significant bytes of its own.
+    if n:
+        h = '%x' % n
+        if len(h) % 2:
+            h = '0' + h
+        res = h.decode('hex')
+    else:
+        res = ''
     return chr(0) * pad + res
 
 def base58_check_encode(s, version=0):
