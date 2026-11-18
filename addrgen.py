@@ -134,9 +134,11 @@ def base58_check_decode(s, version=0):
     v0, data, check0 = k[0], k[1:-4], k[-4:]
     check1 = dhash(v0 + data)[:4]
     if check0 != check1:
-        raise BaseException('checksum error')
-    if version != ord(v0):
-        raise BaseException('version mismatch')
+        raise ValueError('checksum error')
+    payload_version = ord(v0)
+    if version != payload_version:
+        raise ValueError('version mismatch: expected %d, got %d' % (
+            version, payload_version))
     return data
 
 def gen_eckey(passphrase=None, secret=None, pkey=None, compressed=False, rounds=1, version=0):
