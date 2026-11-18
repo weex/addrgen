@@ -14,6 +14,8 @@ Supply the version number for your desired address  with the --otherversion swit
 
     python addrgen.py --otherversion=48
 
-If you wish to generate addresses based on a passphrase, a given private key, or some other option look at the commented lines in the test() function.
+To generate an address from a raw private key, or to re-encode an existing key, look at the commented lines in the test() function.
+
+Passphrase (brainwallet) mode has been removed. The old path turned a passphrase into a private key with one unsalted SHA-256 (`rounds` defaulted to 1). Guessing those keys is cheap, and bots sweep addresses funded from them. Generate the random key this script prints, and store that private key. Do not hash a passphrase into a key.
 
 Created and Licensed Public Domain by Joric/bitcoin-dev June 2012 with minor modifications by David Sterry.
