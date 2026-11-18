@@ -140,11 +140,16 @@ def base58_check_decode(s, version=0):
     return data
 
 def gen_eckey(passphrase=None, secret=None, pkey=None, compressed=False, rounds=1, version=0):
+    # `passphrase` used to be SHA-256'd `rounds` times (default 1) with no salt.
+    # That is a brainwallet: cheap to guess, and bots sweep the resulting keys.
+    # A slower KDF would not make a human passphrase a safe Bitcoin key, and
+    # would also stop this script from regenerating keys it had already made.
+    if passphrase is not None or rounds != 1:
+        raise ValueError(
+            'passphrase mode has been removed: hashing a passphrase with SHA-256 '
+            'is a brainwallet and those keys are swept. Generate a random key, or '
+            'pass an existing key via secret= or pkey=. Do not hash a passphrase.')
     k = KEY()
-    if passphrase:
-        secret = passphrase.encode('utf8')
-        for i in xrange(rounds):
-            secret = hashlib.sha256(secret).digest()
     if pkey:
         secret = base58_check_decode(pkey, 128+version)
         compressed = len(secret) == 33
@@ -169,7 +174,8 @@ def reencode(pkey,version=0):
     secret = payload[:-1]
     payload = secret + chr(1)
     pkey = base58_check_encode(payload, 128+version)
-    print(get_addr(gen_eckey(pkey)))
+    # Keyword form: the first positional parameter used to be `passphrase`.
+    print(get_addr(gen_eckey(pkey=pkey)))
 
 def test(otherversion):
     # random compressed
@@ -180,8 +186,8 @@ def test(otherversion):
     #print get_addr(gen_eckey())
     # by secret
     #print get_addr(gen_eckey(secret=('%064x' % 0xdeadbabe).decode('hex')))
-    # by passphrase
-    #print get_addr(gen_eckey(passphrase='Satoshi Nakamoto'))
+    # Passphrase mode was removed. It hashed the phrase with unsalted SHA-256,
+    # which is a brainwallet. Do not derive a private key from a passphrase.
     # by private key
     #print get_addr(gen_eckey(pkey='5K1HkbYffstTZDuV4riUWMbAMkQh57b8798uoy9pXYUDYeUHe7F'))
     #print get_addr(gen_eckey(pkey='L3ATL5R9Exe1ubuAnHVgNgTKZEUKkDvWYAWkLUCyyvzzxRjtgyFe'))
