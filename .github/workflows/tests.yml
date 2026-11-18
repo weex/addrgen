@@ -1,0 +1,39 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install OpenSSL
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+
+      - name: Enable RIPEMD-160 when OpenSSL hides it
+        run: |
+          if ! python -c "import hashlib; hashlib.new('ripemd160')"; then
+            echo "OPENSSL_CONF=${GITHUB_WORKSPACE}/ci/openssl-legacy.cnf" >> "$GITHUB_ENV"
+            python -c "import hashlib; hashlib.new('ripemd160')"
+          fi
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run pytest
+        run: python -m pytest
