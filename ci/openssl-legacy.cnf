@@ -1,0 +1,17 @@
+# OpenSSL 3 keeps RIPEMD-160 in the legacy provider. P2PKH needs it.
+# GitHub Actions sets OPENSSL_CONF to this file only when the system
+# config cannot create a ripemd160 hash.
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+default = default_sect
+legacy = legacy_sect
+
+[default_sect]
+activate = 1
+
+[legacy_sect]
+activate = 1
