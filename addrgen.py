@@ -1,12 +1,126 @@
 #!/usr/bin/env python
 # Joric/bitcoin-dev, june 2012, public domain
 
+import binascii
 import hashlib
 import ctypes
 import ctypes.util
+import os
 import sys
+try:
+    import secrets
+except ImportError:
+    secrets = None
 
-ssl = ctypes.cdll.LoadLibrary (ctypes.util.find_library ('ssl') or 'libeay32')
+# Order of secp256k1 (SEC 2). A private key is valid iff 1 <= k <= n - 1.
+SECP256K1_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
+# Symbols required to turn a private scalar into a public key. Key material
+# itself comes from the OS CSPRNG, so EC_KEY_generate_key is intentionally
+# not required and is never called.
+_SSL_SYMBOLS = (
+    'BN_CTX_free',
+    'BN_CTX_new',
+    'BN_bin2bn',
+    'BN_bn2bin',
+    'BN_new',
+    'BN_num_bits',
+    'EC_KEY_free',
+    'EC_KEY_get0_group',
+    'EC_KEY_get0_private_key',
+    'EC_KEY_new_by_curve_name',
+    'EC_KEY_set_conv_form',
+    'EC_KEY_set_private_key',
+    'EC_KEY_set_public_key',
+    'EC_POINT_free',
+    'EC_POINT_mul',
+    'EC_POINT_new',
+    'i2o_ECPublicKey',
+)
+
+def _ssl_library_names():
+    names = []
+    for name in ('ssl', 'libeay32'):
+        found = ctypes.util.find_library(name)
+        if found and found not in names:
+            names.append(found)
+    # Historical Windows name, used when find_library does not see it.
+    if 'libeay32' not in names:
+        names.append('libeay32')
+    return names
+
+def _reject_reason(lib):
+    """None if lib can derive a secp256k1 public key, else a short reason."""
+    missing = [sym for sym in _SSL_SYMBOLS if not hasattr(lib, sym)]
+    if missing:
+        return 'missing symbols: ' + ', '.join(missing)
+    lib.EC_KEY_new_by_curve_name.restype = ctypes.c_void_p
+    key = lib.EC_KEY_new_by_curve_name(714)
+    # NULL comes back as None, or as a null c_void_p once errcheck is installed.
+    if not key:
+        return 'secp256k1 (NID 714) is not available'
+    if not isinstance(key, ctypes.c_void_p):
+        key = ctypes.c_void_p(key)
+    lib.EC_KEY_free(key)
+    return None
+
+def load_ssl(names=None):
+    """Load libssl/libeay32 and refuse to continue if it cannot derive keys.
+
+    find_library('ssl') may hand back LibreSSL, an old OpenSSL, or an unrelated
+    library. A missing file, a missing symbol, or a build without secp256k1
+    raises RuntimeError here instead of failing later inside ctypes.
+    """
+    if names is None:
+        names = _ssl_library_names()
+    if not names:
+        raise RuntimeError('No crypto library names to try (looked for libssl and libeay32)')
+    errors = []
+    for name in names:
+        try:
+            lib = ctypes.cdll.LoadLibrary(name)
+        except OSError as exc:
+            errors.append('%s: %s' % (name, exc))
+            continue
+        reason = _reject_reason(lib)
+        if reason:
+            errors.append('%s: %s' % (name, reason))
+            continue
+        return lib
+    raise RuntimeError(
+        'Could not load a crypto library that provides secp256k1 public-key '
+        'derivation. Tried %s. %s' % (', '.join(names), '; '.join(errors)))
+
+ssl = load_ssl()
+
+def os_random_bytes(n):
+    """Bytes from the OS CSPRNG. secrets.token_bytes, else os.urandom."""
+    token_bytes = getattr(secrets, 'token_bytes', None) if secrets is not None else None
+    if token_bytes is not None:
+        return token_bytes(n)
+    return os.urandom(n)
+
+def secret_in_range(raw):
+    """True when raw is a 32-byte scalar in [1, n-1]."""
+    if len(raw) != 32:
+        return False
+    value = int(binascii.hexlify(raw), 16)
+    return 1 <= value < SECP256K1_ORDER
+
+def random_secret():
+    """New private key from the OS CSPRNG, retried until it is in [1, n-1].
+
+    Rejection sampling (not reduction modulo n) so the result is unbiased.
+    A draw outside the range is vanishingly rare; giving up means the RNG
+    is not returning usable bytes.
+    """
+    for _ in range(128):
+        raw = os_random_bytes(32)
+        if len(raw) != 32:
+            raise RuntimeError('OS CSPRNG returned %d bytes, expected 32' % len(raw))
+        if secret_in_range(raw):
+            return raw
+    raise RuntimeError('OS CSPRNG failed to produce a private key in [1, n-1]')
 
 def check_result (val, func, args):
     if val == 0: raise ValueError 
@@ -20,7 +134,6 @@ class VoidP(ctypes.c_void_p) :
 
 ssl.BN_bin2bn.restype = VoidP
 ssl.BN_new.restype = VoidP
-ssl.EC_KEY_generate_key.restype = VoidP
 ssl.EC_KEY_get0_group.restype = VoidP
 ssl.EC_KEY_get0_private_key.restype = VoidP
 ssl.BN_CTX_new.restype = VoidP
@@ -40,20 +153,21 @@ class KEY:
         self.k = None
 
     def generate(self, secret=None):
-        if secret:
-            self.prikey = secret
-            priv_key = ssl.BN_bin2bn(secret, 32, ssl.BN_new())
-            group = ssl.EC_KEY_get0_group(self.k)
-            pub_key = ssl.EC_POINT_new(group)
-            ctx = ssl.BN_CTX_new()
-            ssl.EC_POINT_mul(group, pub_key, priv_key, None, None, ctx)
-            ssl.EC_KEY_set_private_key(self.k, priv_key)
-            ssl.EC_KEY_set_public_key(self.k, pub_key)
-            ssl.EC_POINT_free(pub_key)
-            ssl.BN_CTX_free(ctx)
-            return self.k
-        else:
-            return ssl.EC_KEY_generate_key(self.k)
+        # Fresh keys come from the OS CSPRNG. The library only multiplies
+        # the secp256k1 generator by that scalar.
+        if not secret:
+            secret = random_secret()
+        self.prikey = secret
+        priv_key = ssl.BN_bin2bn(secret, 32, ssl.BN_new())
+        group = ssl.EC_KEY_get0_group(self.k)
+        pub_key = ssl.EC_POINT_new(group)
+        ctx = ssl.BN_CTX_new()
+        ssl.EC_POINT_mul(group, pub_key, priv_key, None, None, ctx)
+        ssl.EC_KEY_set_private_key(self.k, priv_key)
+        ssl.EC_KEY_set_public_key(self.k, pub_key)
+        ssl.EC_POINT_free(pub_key)
+        ssl.BN_CTX_free(ctx)
+        return self.k
 
     def get_pubkey(self):
         size = ssl.i2o_ECPublicKey(self.k, 0)
