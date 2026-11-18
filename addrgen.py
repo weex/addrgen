@@ -8,23 +8,71 @@ import sys
 
 ssl = ctypes.cdll.LoadLibrary (ctypes.util.find_library ('ssl') or 'libeay32')
 
-def check_result (val, func, args):
-    if val == 0: raise ValueError 
-    else: return ctypes.c_void_p (val)
+class VoidP(ctypes.c_void_p):
+    """Opaque pointer that ctypes will not turn into an int.
 
-ssl.EC_KEY_new_by_curve_name.restype = ctypes.c_void_p
-ssl.EC_KEY_new_by_curve_name.errcheck = check_result
-
-class VoidP(ctypes.c_void_p) :
+    A c_void_p restype becomes a Python int. On 64-bit platforms that int
+    is truncated to 32 bits when passed into a later call, so every pointer
+    OpenSSL returns uses this subclass instead.
+    """
     pass
 
-ssl.BN_bin2bn.restype = VoidP
-ssl.BN_new.restype = VoidP
-ssl.EC_KEY_generate_key.restype = VoidP
-ssl.EC_KEY_get0_group.restype = VoidP
-ssl.EC_KEY_get0_private_key.restype = VoidP
-ssl.BN_CTX_new.restype = VoidP
-ssl.EC_POINT_new.restype = VoidP
+
+# secp256k1 private keys are 256-bit scalars, serialized big-endian.
+SECRET_LEN = 32
+
+
+def _require_ptr(result, func, args):
+    # NULL comes back as None, not 0, when restype is a pointer.
+    if not result:
+        raise ValueError('%s failed' % func.__name__)
+    return result
+
+
+def _require_success(result, func, args):
+    # These OpenSSL calls return 1 on success and 0 on error.
+    if result != 1:
+        raise ValueError('%s failed' % func.__name__)
+    return result
+
+
+def _require_positive(result, func, args):
+    if result <= 0:
+        raise ValueError('%s failed' % func.__name__)
+    return result
+
+
+def _bind(name, argtypes, restype, errcheck=None):
+    fn = getattr(ssl, name)
+    fn.argtypes = argtypes
+    fn.restype = restype
+    if errcheck is not None:
+        fn.errcheck = errcheck
+
+
+_char_p_p = ctypes.POINTER(ctypes.c_char_p)
+
+_bind('EC_KEY_new_by_curve_name', [ctypes.c_int], VoidP, _require_ptr)
+_bind('EC_KEY_free', [VoidP], None)
+_bind('EC_KEY_generate_key', [VoidP], ctypes.c_int, _require_success)
+_bind('EC_KEY_get0_group', [VoidP], VoidP, _require_ptr)
+_bind('EC_KEY_get0_private_key', [VoidP], VoidP, _require_ptr)
+_bind('EC_KEY_set_private_key', [VoidP, VoidP], ctypes.c_int, _require_success)
+_bind('EC_KEY_set_public_key', [VoidP, VoidP], ctypes.c_int, _require_success)
+_bind('EC_KEY_set_conv_form', [VoidP, ctypes.c_int], None)
+_bind('BN_bin2bn', [ctypes.c_char_p, ctypes.c_int, VoidP], VoidP, _require_ptr)
+_bind('BN_clear_free', [VoidP], None)
+_bind('BN_num_bits', [VoidP], ctypes.c_int)
+_bind('BN_bn2bin', [VoidP, ctypes.c_char_p], ctypes.c_int)
+_bind('BN_CTX_new', [], VoidP, _require_ptr)
+_bind('BN_CTX_free', [VoidP], None)
+_bind('EC_POINT_new', [VoidP], VoidP, _require_ptr)
+_bind('EC_POINT_free', [VoidP], None)
+_bind('EC_POINT_mul',
+      [VoidP, VoidP, VoidP, VoidP, VoidP, VoidP],
+      ctypes.c_int, _require_success)
+_bind('i2o_ECPublicKey', [VoidP, _char_p_p], ctypes.c_int, _require_positive)
+
 
 class KEY:
     def __init__(self):
@@ -35,38 +83,62 @@ class KEY:
         self.POINT_CONVERSION_UNCOMPRESSED = 4
 
     def __del__(self):
-        if ssl:
-            ssl.EC_KEY_free(self.k)
-        self.k = None
+        k = getattr(self, 'k', None)
+        if k and ssl:
+            ssl.EC_KEY_free(k)
+            self.k = None
 
     def generate(self, secret=None):
-        if secret:
+        if secret is not None:
+            # Length must be the buffer's real size. A hardcoded 32-byte read
+            # overruns a shorter secret and silently truncates a longer one.
+            if not isinstance(secret, type(b'')) or len(secret) != SECRET_LEN:
+                raise ValueError('secret must be exactly %d bytes' % SECRET_LEN)
             self.prikey = secret
-            priv_key = ssl.BN_bin2bn(secret, 32, ssl.BN_new())
-            group = ssl.EC_KEY_get0_group(self.k)
-            pub_key = ssl.EC_POINT_new(group)
-            ctx = ssl.BN_CTX_new()
-            ssl.EC_POINT_mul(group, pub_key, priv_key, None, None, ctx)
-            ssl.EC_KEY_set_private_key(self.k, priv_key)
-            ssl.EC_KEY_set_public_key(self.k, pub_key)
-            ssl.EC_POINT_free(pub_key)
-            ssl.BN_CTX_free(ctx)
-            return self.k
+            priv_key = None
+            pub_key = None
+            ctx = None
+            try:
+                priv_key = ssl.BN_bin2bn(secret, len(secret), None)
+                group = ssl.EC_KEY_get0_group(self.k)
+                pub_key = ssl.EC_POINT_new(group)
+                ctx = ssl.BN_CTX_new()
+                ssl.EC_POINT_mul(group, pub_key, priv_key, None, None, ctx)
+                ssl.EC_KEY_set_private_key(self.k, priv_key)
+                ssl.EC_KEY_set_public_key(self.k, pub_key)
+            finally:
+                # EC_KEY_set_private_key copies the scalar. Wipe the temporary.
+                if pub_key:
+                    ssl.EC_POINT_free(pub_key)
+                if ctx:
+                    ssl.BN_CTX_free(ctx)
+                if priv_key:
+                    ssl.BN_clear_free(priv_key)
         else:
-            return ssl.EC_KEY_generate_key(self.k)
+            ssl.EC_KEY_generate_key(self.k)
+        return self.k
 
     def get_pubkey(self):
-        size = ssl.i2o_ECPublicKey(self.k, 0)
+        size = ssl.i2o_ECPublicKey(self.k, None)
+        expect = 33 if self.compressed else 65
+        if size != expect:
+            raise ValueError('unexpected public key length %s' % size)
         mb = ctypes.create_string_buffer(size)
-        ssl.i2o_ECPublicKey(self.k, ctypes.byref(ctypes.pointer(mb)))
+        # i2o writes through *out and then advances that pointer.
+        buf_ptr = ctypes.c_char_p(ctypes.addressof(mb))
+        written = ssl.i2o_ECPublicKey(self.k, ctypes.byref(buf_ptr))
+        if written != size:
+            raise ValueError('i2o_ECPublicKey wrote %s bytes, expected %s' % (written, size))
         return mb.raw
 
     def get_secret(self):
-        bn = ssl.EC_KEY_get0_private_key(self.k);
-        bytes = (ssl.BN_num_bits(bn) + 7) / 8
-        mb = ctypes.create_string_buffer(bytes)
-        n = ssl.BN_bn2bin(bn, mb);
-        return mb.raw.rjust(32, chr(0))
+        bn = ssl.EC_KEY_get0_private_key(self.k)
+        nbytes = (ssl.BN_num_bits(bn) + 7) / 8
+        mb = ctypes.create_string_buffer(nbytes)
+        n = ssl.BN_bn2bin(bn, mb)
+        if n != nbytes:
+            raise ValueError('BN_bn2bin failed')
+        return mb.raw.rjust(SECRET_LEN, chr(0))
 
     def set_compressed(self, compressed):
         self.compressed = compressed
