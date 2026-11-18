@@ -1,2 +1,3 @@
 #!/usr/bin/env bash
-arch -i386 python addrgen.py
+cd "$(dirname "$0")" || exit 1
+exec python3 ./addrgen.py "$@"
