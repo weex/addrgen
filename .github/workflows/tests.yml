@@ -23,7 +23,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install OpenSSL
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev build-essential cmake
 
       - name: Enable RIPEMD-160 when OpenSSL hides it
         run: |
