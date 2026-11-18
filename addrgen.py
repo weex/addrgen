@@ -171,12 +171,20 @@ def get_addr(k,version=0):
     return addr, pkey
 
 def reencode(pkey,version=0):
+    # Compressed WIF is a 32-byte secret plus 0x01. Uncompressed WIF is
+    # the 32-byte secret alone; do not drop the last secret byte.
     payload = base58_check_decode(pkey,128+version)
-    secret = payload[:-1]
+    if len(payload) == 33 and payload.endswith(b'\x01'):
+        secret = payload[:-1]
+    elif len(payload) == 32:
+        secret = payload
+    else:
+        raise ValueError('invalid WIF payload')
     payload = secret + b'\x01'
     pkey = base58_check_encode(payload, 128+version)
     # Keyword form: the first positional parameter used to be `passphrase`.
-    print(get_addr(gen_eckey(pkey=pkey)))
+    print(get_addr(gen_eckey(pkey=pkey, version=version), version))
+    return pkey
 
 def test(otherversion):
     # random compressed
