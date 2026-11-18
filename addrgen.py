@@ -76,8 +76,21 @@ class KEY:
             form = self.POINT_CONVERSION_UNCOMPRESSED
         ssl.EC_KEY_set_conv_form(self.k, form)
 
+def _raw_bytes(s):
+    # hashlib and the hex codecs want bytes on Python 3. This module
+    # otherwise passes around 8-bit strings, including under Python 2.
+    if sys.version_info[0] >= 3 and isinstance(s, str):
+        return s.encode('latin1')
+    return s
+
+def _byte_string(b):
+    if sys.version_info[0] >= 3 and isinstance(b, bytes):
+        return b.decode('latin1')
+    return b
+
 def dhash(s):
-    return hashlib.sha256(hashlib.sha256(s).digest()).digest()
+    digest = hashlib.sha256(hashlib.sha256(_raw_bytes(s)).digest()).digest()
+    return _byte_string(digest)
 
 def rhash(s):
     h1 = hashlib.new('ripemd160')
@@ -102,7 +115,12 @@ def base58_decode(s):
     return n
 
 def base58_encode_padded(s):
-    res = base58_encode(int('0x' + s.encode('hex'), 16))
+    raw = _raw_bytes(s)
+    if sys.version_info[0] >= 3:
+        hexdigits = raw.hex()
+    else:
+        hexdigits = raw.encode('hex')
+    res = base58_encode(int('0x' + hexdigits, 16))
     pad = 0
     for c in s:
         if c == chr(0):
@@ -121,7 +139,10 @@ def base58_decode_padded(s):
     h = '%x' % base58_decode(s)
     if len(h) % 2:
         h = '0' + h
-    res = h.decode('hex')
+    if sys.version_info[0] >= 3:
+        res = bytes.fromhex(h).decode('latin1')
+    else:
+        res = h.decode('hex')
     return chr(0) * pad + res
 
 def base58_check_encode(s, version=0):
@@ -165,11 +186,19 @@ def get_addr(k,version=0):
     return addr, pkey
 
 def reencode(pkey,version=0):
+    # Compressed WIF is a 32-byte secret plus 0x01. Uncompressed WIF is
+    # the 32-byte secret alone; do not drop the last secret byte.
     payload = base58_check_decode(pkey,128+version)
-    secret = payload[:-1]
+    if len(payload) == 33 and payload.endswith(chr(1)):
+        secret = payload[:-1]
+    elif len(payload) == 32:
+        secret = payload
+    else:
+        raise ValueError('invalid WIF payload')
     payload = secret + chr(1)
     pkey = base58_check_encode(payload, 128+version)
-    print(get_addr(gen_eckey(pkey)))
+    print(pkey)
+    return pkey
 
 def test(otherversion):
     # random compressed
