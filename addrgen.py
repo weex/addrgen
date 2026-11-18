@@ -183,8 +183,11 @@ def test(otherversion):
     # by passphrase
     #print get_addr(gen_eckey(passphrase='Satoshi Nakamoto'))
     # by private key
-    #print get_addr(gen_eckey(pkey='5K1HkbYffstTZDuV4riUWMbAMkQh57b8798uoy9pXYUDYeUHe7F'))
-    #print get_addr(gen_eckey(pkey='L3ATL5R9Exe1ubuAnHVgNgTKZEUKkDvWYAWkLUCyyvzzxRjtgyFe'))
+    # Public test vectors from the Bitcoin wiki "Wallet import format" page
+    # (same secret: uncompressed, then compressed). These keys are public.
+    # WARNING: never send or store funds on them.
+    #print get_addr(gen_eckey(pkey='5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ'))
+    #print get_addr(gen_eckey(pkey='KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617'))
 
     # uncomment this to reencode the private keys created by early versions of this script
     #reencode(sys.argv[1])
