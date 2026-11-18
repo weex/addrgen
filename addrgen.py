@@ -1,199 +1,173 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Joric/bitcoin-dev, june 2012, public domain
+#
+# secp256k1 keys come from libsecp256k1 via coincurve. HASH160 is SHA-256
+# followed by RIPEMD-160; ripemd160.py uses hashlib when this interpreter
+# has it and a pure-Python implementation when it does not.
 
 import hashlib
-import ctypes
-import ctypes.util
-import sys
 
-ssl = ctypes.cdll.LoadLibrary (ctypes.util.find_library ('ssl') or 'libeay32')
+from coincurve import PrivateKey
 
-def check_result (val, func, args):
-    if val == 0: raise ValueError 
-    else: return ctypes.c_void_p (val)
+from ripemd160 import ripemd160
 
-ssl.EC_KEY_new_by_curve_name.restype = ctypes.c_void_p
-ssl.EC_KEY_new_by_curve_name.errcheck = check_result
+b58_digits = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
-class VoidP(ctypes.c_void_p) :
-    pass
-
-ssl.BN_bin2bn.restype = VoidP
-ssl.BN_new.restype = VoidP
-ssl.EC_KEY_generate_key.restype = VoidP
-ssl.EC_KEY_get0_group.restype = VoidP
-ssl.EC_KEY_get0_private_key.restype = VoidP
-ssl.BN_CTX_new.restype = VoidP
-ssl.EC_POINT_new.restype = VoidP
 
 class KEY:
     def __init__(self):
-        NID_secp256k1 = 714
-        self.k = ssl.EC_KEY_new_by_curve_name(NID_secp256k1)
+        self.private_key = None
         self.compressed = False
-        self.POINT_CONVERSION_COMPRESSED = 2
-        self.POINT_CONVERSION_UNCOMPRESSED = 4
-
-    def __del__(self):
-        if ssl:
-            ssl.EC_KEY_free(self.k)
-        self.k = None
 
     def generate(self, secret=None):
-        if secret:
-            self.prikey = secret
-            priv_key = ssl.BN_bin2bn(secret, 32, ssl.BN_new())
-            group = ssl.EC_KEY_get0_group(self.k)
-            pub_key = ssl.EC_POINT_new(group)
-            ctx = ssl.BN_CTX_new()
-            ssl.EC_POINT_mul(group, pub_key, priv_key, None, None, ctx)
-            ssl.EC_KEY_set_private_key(self.k, priv_key)
-            ssl.EC_KEY_set_public_key(self.k, pub_key)
-            ssl.EC_POINT_free(pub_key)
-            ssl.BN_CTX_free(ctx)
-            return self.k
+        if secret is None:
+            self.private_key = PrivateKey()
         else:
-            return ssl.EC_KEY_generate_key(self.k)
+            if isinstance(secret, bytearray):
+                secret = bytes(secret)
+            if not isinstance(secret, bytes) or len(secret) != 32:
+                raise ValueError("secret must be 32 bytes")
+            self.private_key = PrivateKey(secret)
+        return self.private_key
 
     def get_pubkey(self):
-        size = ssl.i2o_ECPublicKey(self.k, 0)
-        mb = ctypes.create_string_buffer(size)
-        ssl.i2o_ECPublicKey(self.k, ctypes.byref(ctypes.pointer(mb)))
-        return mb.raw
+        return self.private_key.public_key.format(compressed=self.compressed)
 
     def get_secret(self):
-        bn = ssl.EC_KEY_get0_private_key(self.k);
-        bytes = (ssl.BN_num_bits(bn) + 7) / 8
-        mb = ctypes.create_string_buffer(bytes)
-        n = ssl.BN_bn2bin(bn, mb);
-        return mb.raw.rjust(32, chr(0))
+        return self.private_key.secret
 
     def set_compressed(self, compressed):
         self.compressed = compressed
-        if compressed:
-            form = self.POINT_CONVERSION_COMPRESSED
-        else:
-            form = self.POINT_CONVERSION_UNCOMPRESSED
-        ssl.EC_KEY_set_conv_form(self.k, form)
 
-def dhash(s):
-    return hashlib.sha256(hashlib.sha256(s).digest()).digest()
 
-def rhash(s):
-    h1 = hashlib.new('ripemd160')
-    h1.update(hashlib.sha256(s).digest())
-    return h1.digest()
+def dhash(data):
+    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
-b58_digits = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 
-def base58_encode(n):
-    l = []
-    while n > 0:
-        n, r = divmod(n, 58)
-        l.insert(0,(b58_digits[r]))
-    return ''.join(l)
+def rhash(data):
+    return ripemd160(hashlib.sha256(data).digest())
 
-def base58_decode(s):
-    n = 0
-    for ch in s:
-        n *= 58
-        digit = b58_digits.index(ch)
-        n += digit
-    return n
 
-def base58_encode_padded(s):
-    res = base58_encode(int('0x' + s.encode('hex'), 16))
+def base58_encode(number):
+    digits = []
+    while number > 0:
+        number, remainder = divmod(number, 58)
+        digits.append(b58_digits[remainder])
+    digits.reverse()
+    return "".join(digits)
+
+
+def base58_decode(text):
+    number = 0
+    for char in text:
+        number *= 58
+        number += b58_digits.index(char)
+    return number
+
+
+def base58_encode_padded(data):
+    encoded = base58_encode(int.from_bytes(data, "big"))
     pad = 0
-    for c in s:
-        if c == chr(0):
+    for byte in data:
+        if byte == 0:
             pad += 1
         else:
             break
-    return b58_digits[0] * pad + res
+    return b58_digits[0] * pad + encoded
 
-def base58_decode_padded(s):
+
+def base58_decode_padded(text):
     pad = 0
-    for c in s:
-        if c == b58_digits[0]:
+    for char in text:
+        if char == b58_digits[0]:
             pad += 1
         else:
             break
-    h = '%x' % base58_decode(s)
-    if len(h) % 2:
-        h = '0' + h
-    res = h.decode('hex')
-    return chr(0) * pad + res
+    number = base58_decode(text)
+    if number == 0:
+        body = b""
+    else:
+        body = number.to_bytes((number.bit_length() + 7) // 8, "big")
+    return b"\x00" * pad + body
 
-def base58_check_encode(s, version=0):
-    vs = chr(version) + s
-    check = dhash(vs)[:4]
-    return base58_encode_padded(vs + check)
 
-def base58_check_decode(s, version=0):
-    k = base58_decode_padded(s)
-    v0, data, check0 = k[0], k[1:-4], k[-4:]
-    check1 = dhash(v0 + data)[:4]
-    if check0 != check1:
-        raise BaseException('checksum error')
-    if version != ord(v0):
-        raise BaseException('version mismatch')
+def base58_check_encode(payload, version=0):
+    versioned = bytes([version]) + payload
+    checksum = dhash(versioned)[:4]
+    return base58_encode_padded(versioned + checksum)
+
+
+def base58_check_decode(text, version=0):
+    decoded = base58_decode_padded(text)
+    if len(decoded) < 5:
+        raise BaseException("checksum error")
+    version_byte, data, checksum = decoded[0], decoded[1:-4], decoded[-4:]
+    expected = dhash(bytes([version_byte]) + data)[:4]
+    if checksum != expected:
+        raise BaseException("checksum error")
+    if version != version_byte:
+        raise BaseException("version mismatch")
     return data
 
+
 def gen_eckey(passphrase=None, secret=None, pkey=None, compressed=False, rounds=1, version=0):
-    k = KEY()
     if passphrase:
-        secret = passphrase.encode('utf8')
-        for i in xrange(rounds):
+        secret = passphrase.encode("utf-8")
+        for _ in range(rounds):
             secret = hashlib.sha256(secret).digest()
     if pkey:
-        secret = base58_check_decode(pkey, 128+version)
+        secret = base58_check_decode(pkey, 128 + version)
         compressed = len(secret) == 33
-        secret = secret[0:32]
-    k.generate(secret)
-    k.set_compressed(compressed)
-    return k
+        secret = secret[:32]
+    key = KEY()
+    key.generate(secret)
+    key.set_compressed(compressed)
+    return key
 
-def get_addr(k,version=0):
-    pubkey = k.get_pubkey()
-    secret = k.get_secret()
-    hash160 = rhash(pubkey)
-    addr = base58_check_encode(hash160,version)
-    payload = secret
-    if k.compressed:
-        payload = secret + chr(1)
-    pkey = base58_check_encode(payload, 128+version)
+
+def get_addr(key, version=0):
+    pubkey = key.get_pubkey()
+    secret = key.get_secret()
+    addr = base58_check_encode(rhash(pubkey), version)
+    payload = secret + (b"\x01" if key.compressed else b"")
+    pkey = base58_check_encode(payload, 128 + version)
     return addr, pkey
 
-def reencode(pkey,version=0):
-    payload = base58_check_decode(pkey,128+version)
+
+def reencode(pkey, version=0):
+    payload = base58_check_decode(pkey, 128 + version)
     secret = payload[:-1]
-    payload = secret + chr(1)
-    pkey = base58_check_encode(payload, 128+version)
+    payload = secret + b"\x01"
+    pkey = base58_check_encode(payload, 128 + version)
     print(get_addr(gen_eckey(pkey)))
+
 
 def test(otherversion):
     # random compressed
-    print(get_addr(gen_eckey(compressed=True,version=otherversion),version=otherversion))
+    print(get_addr(gen_eckey(compressed=True, version=otherversion), version=otherversion))
 
     # uncomment these to create addresses via a different method
     # random uncompressed
-    #print get_addr(gen_eckey())
+    #print(get_addr(gen_eckey()))
     # by secret
-    #print get_addr(gen_eckey(secret=('%064x' % 0xdeadbabe).decode('hex')))
+    #print(get_addr(gen_eckey(secret=bytes.fromhex("%064x" % 0xdeadbabe))))
     # by passphrase
-    #print get_addr(gen_eckey(passphrase='Satoshi Nakamoto'))
+    #print(get_addr(gen_eckey(passphrase="Satoshi Nakamoto")))
     # by private key
-    #print get_addr(gen_eckey(pkey='5K1HkbYffstTZDuV4riUWMbAMkQh57b8798uoy9pXYUDYeUHe7F'))
-    #print get_addr(gen_eckey(pkey='L3ATL5R9Exe1ubuAnHVgNgTKZEUKkDvWYAWkLUCyyvzzxRjtgyFe'))
+    #print(get_addr(gen_eckey(pkey="5K1HkbYffstTZDuV4riUWMbAMkQh57b8798uoy9pXYUDYeUHe7F")))
+    #print(get_addr(gen_eckey(pkey="L3ATL5R9Exe1ubuAnHVgNgTKZEUKkDvWYAWkLUCyyvzzxRjtgyFe")))
 
     # uncomment this to reencode the private keys created by early versions of this script
+    #import sys
     #reencode(sys.argv[1])
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import optparse
+
     parser = optparse.OptionParser(usage="%prog [options]")
     parser.add_option("--otherversion", dest="otherversion", default=0,
-                    help="Generate address with different version number")
+                      help="Generate address with different version number")
     (options, args) = parser.parse_args()
- 
+
     test(int(options.otherversion))

@@ -1,0 +1,2 @@
+# libsecp256k1 bindings. Keep this pin identical to pyproject.toml.
+coincurve==21.0.0
