@@ -37,8 +37,6 @@ import pytest
 import addrgen
 
 
-# Checksum and version failures must be ValueError. BaseException also
-# covers KeyboardInterrupt and SystemExit, so it is not a usable error.
 XFAIL_BASE58CHECK = (
     "Base58Check still uses the Python 2 hex codec and mixes str with "
     "bytes, so WIF and P2PKH encoding never run"
@@ -50,10 +48,6 @@ XFAIL_ADDRESS = (
 XFAIL_IMPORT = (
     "WIF import decodes through str.decode('hex'), which Python 3 removed, "
     "so the compression flag and address are never checked"
-)
-XFAIL_CHECKSUM = (
-    "checksum and version checks sit behind the Python 2 hex codec and "
-    "still raise BaseException instead of ValueError"
 )
 XFAIL_INVALID_KEY = (
     "out-of-range scalars and malformed WIF payloads are not rejected; "
@@ -379,7 +373,6 @@ def test_wif_import_round_trip(key):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason=XFAIL_CHECKSUM)
 @pytest.mark.parametrize(
     ("text", "version"),
     [
@@ -396,14 +389,12 @@ def test_bad_checksum_raises_valueerror(text, version):
         addrgen.base58_check_decode(text, version)
 
 
-@pytest.mark.xfail(reason=XFAIL_CHECKSUM)
 def test_valid_wif_is_not_a_p2pkh_address():
     """Checksum matches; the version byte is 0x80, not 0x00."""
     with pytest.raises(ValueError, match="version mismatch"):
         addrgen.base58_check_decode(WIKI_WIF_TEXT, 0)
 
 
-@pytest.mark.xfail(reason=XFAIL_CHECKSUM)
 def test_p2pkh_address_is_not_a_private_key():
     """Bitcoin Core strAddressBad: a real address, passed to DecodeSecret."""
     address = "1HV9Lc3sNHZxwj4Zk6fB38tEmBryq2cBiF"
