@@ -1,88 +1,46 @@
 #!/usr/bin/env python3
 # Joric/bitcoin-dev, june 2012, public domain
+#
+# secp256k1 keys come from libsecp256k1 via coincurve. RIPEMD-160 comes from
+# hashlib when OpenSSL provides it, and from ripemd160.py otherwise.
 
 import hashlib
-import ctypes
-import ctypes.util
 import sys
 
-ssl = ctypes.cdll.LoadLibrary (ctypes.util.find_library ('ssl') or 'libeay32')
+from coincurve import PrivateKey
 
-def check_result (val, func, args):
-    if val == 0: raise ValueError 
-    else: return ctypes.c_void_p (val)
-
-ssl.EC_KEY_new_by_curve_name.restype = ctypes.c_void_p
-ssl.EC_KEY_new_by_curve_name.errcheck = check_result
-
-class VoidP(ctypes.c_void_p) :
-    pass
-
-ssl.BN_bin2bn.restype = VoidP
-ssl.BN_new.restype = VoidP
-ssl.EC_KEY_generate_key.restype = VoidP
-ssl.EC_KEY_get0_group.restype = VoidP
-ssl.EC_KEY_get0_private_key.restype = VoidP
-ssl.BN_CTX_new.restype = VoidP
-ssl.EC_POINT_new.restype = VoidP
+from ripemd160 import ripemd160
 
 class KEY:
     def __init__(self):
-        NID_secp256k1 = 714
-        self.k = ssl.EC_KEY_new_by_curve_name(NID_secp256k1)
+        self.private_key = None
         self.compressed = False
-        self.POINT_CONVERSION_COMPRESSED = 2
-        self.POINT_CONVERSION_UNCOMPRESSED = 4
-
-    def __del__(self):
-        if ssl:
-            ssl.EC_KEY_free(self.k)
-        self.k = None
 
     def generate(self, secret=None):
         if secret:
-            self.prikey = secret
-            priv_key = ssl.BN_bin2bn(secret, 32, ssl.BN_new())
-            group = ssl.EC_KEY_get0_group(self.k)
-            pub_key = ssl.EC_POINT_new(group)
-            ctx = ssl.BN_CTX_new()
-            ssl.EC_POINT_mul(group, pub_key, priv_key, None, None, ctx)
-            ssl.EC_KEY_set_private_key(self.k, priv_key)
-            ssl.EC_KEY_set_public_key(self.k, pub_key)
-            ssl.EC_POINT_free(pub_key)
-            ssl.BN_CTX_free(ctx)
-            return self.k
-        else:
-            return ssl.EC_KEY_generate_key(self.k)
+            if isinstance(secret, bytearray):
+                secret = bytes(secret)
+            if not isinstance(secret, bytes) or len(secret) != 32:
+                raise ValueError('secret must be 32 bytes')
+            self.private_key = PrivateKey(secret)
+            return self.private_key
+        self.private_key = PrivateKey()
+        return self.private_key
 
     def get_pubkey(self):
-        size = ssl.i2o_ECPublicKey(self.k, 0)
-        mb = ctypes.create_string_buffer(size)
-        ssl.i2o_ECPublicKey(self.k, ctypes.byref(ctypes.pointer(mb)))
-        return mb.raw
+        return self.private_key.public_key.format(compressed=self.compressed)
 
     def get_secret(self):
-        bn = ssl.EC_KEY_get0_private_key(self.k)
-        size = (ssl.BN_num_bits(bn) + 7) // 8
-        mb = ctypes.create_string_buffer(size)
-        ssl.BN_bn2bin(bn, mb)
-        return mb.raw.rjust(32, b'\x00')
+        return self.private_key.secret
 
     def set_compressed(self, compressed):
         self.compressed = compressed
-        if compressed:
-            form = self.POINT_CONVERSION_COMPRESSED
-        else:
-            form = self.POINT_CONVERSION_UNCOMPRESSED
-        ssl.EC_KEY_set_conv_form(self.k, form)
 
 def dhash(s):
     return hashlib.sha256(hashlib.sha256(s).digest()).digest()
 
 def rhash(s):
-    h1 = hashlib.new('ripemd160')
-    h1.update(hashlib.sha256(s).digest())
-    return h1.digest()
+    return ripemd160(hashlib.sha256(s).digest())
 
 b58_digits = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 

@@ -1,2 +1,3 @@
-# Test-only dependencies. addrgen.py itself has none.
+# coincurve is the runtime secp256k1 dependency (same pin as requirements.txt).
+-r requirements.txt
 pytest>=8.3

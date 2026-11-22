@@ -1,0 +1,6 @@
+# libsecp256k1. Keep this pin identical to pyproject.toml.
+# 21.0.0 has wheels for CPython 3.9-3.13. It has no 3.14 wheel, and its
+# sdist fails while vendoring cffi (ofek/coincurve#208). 3.14 uses the
+# unreleased 3.14 fix, pinned by commit.
+coincurve==21.0.0; python_version < "3.14"
+coincurve @ git+https://github.com/ofek/coincurve.git@2d11b1160c75ae8fd94fe8fe3f226aec176bf9bf ; python_version >= "3.14"

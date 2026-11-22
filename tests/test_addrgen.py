@@ -419,7 +419,6 @@ def test_p2pkh_address_is_not_a_private_key():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason=XFAIL_INVALID_KEY)
 @pytest.mark.parametrize(
     "secret_hex",
     [
@@ -436,7 +435,6 @@ def test_out_of_range_secret_rejected(secret_hex):
         addrgen.get_addr(addrgen.gen_eckey(secret=secret))
 
 
-@pytest.mark.xfail(reason=XFAIL_INVALID_KEY)
 @pytest.mark.parametrize(
     "wif",
     [
@@ -454,19 +452,28 @@ def test_out_of_range_wif_rejected(wif):
         addrgen.get_addr(addrgen.gen_eckey(pkey=wif))
 
 
-@pytest.mark.xfail(reason=XFAIL_INVALID_KEY)
 @pytest.mark.parametrize(
     "wif",
     [
         # Wiki sample secret with a trailing 0x00. Early addrgen appended
         # 0x00 for compressed keys; Bitcoin requires 0x01.
-        "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvHFRKf6",
+        pytest.param(
+            "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvHFRKf6",
+            id="suffix-0x00",
+            marks=pytest.mark.xfail(reason=XFAIL_INVALID_KEY),
+        ),
         # Same secret with a trailing 0x02.
-        "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvWxyf5d",
+        pytest.param(
+            "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvWxyf5d",
+            id="suffix-0x02",
+            marks=pytest.mark.xfail(reason=XFAIL_INVALID_KEY),
+        ),
         # 0x80 || the first 31 bytes of the wiki sample secret.
-        "yPoVP5njSzmEVK4VJGRWWAwqnwCyLPRcMm5XyrKgY1DE64xhu",
+        pytest.param(
+            "yPoVP5njSzmEVK4VJGRWWAwqnwCyLPRcMm5XyrKgY1DE64xhu",
+            id="31-byte-secret",
+        ),
     ],
-    ids=["suffix-0x00", "suffix-0x02", "31-byte-secret"],
 )
 def test_malformed_wif_payload_rejected(wif):
     """Each string is valid Base58Check and still not a WIF."""
