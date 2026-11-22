@@ -58,7 +58,9 @@ class KEY:
     def generate(self, secret=None):
         # Fresh keys are drawn here. coincurve only multiplies the generator
         # by that scalar; it is not asked to mint the private key.
-        if not secret:
+        # None asks for a random key. An explicit buffer, including an empty
+        # one, has to be 32 bytes.
+        if secret is None:
             secret = random_secret()
         if isinstance(secret, bytearray):
             secret = bytes(secret)
@@ -152,9 +154,18 @@ def gen_eckey(passphrase=None, secret=None, pkey=None, compressed=False, rounds=
             'pass an existing key via secret= or pkey=. Do not hash a passphrase.')
     k = KEY()
     if pkey:
-        secret = base58_check_decode(pkey, 128+version)
-        compressed = len(secret) == 33
-        secret = secret[0:32]
+        payload = base58_check_decode(pkey, 128+version)
+        # 32 bytes is an uncompressed scalar. 33 bytes is that scalar plus
+        # the compressed-key flag 0x01. Any other shape is rejected whole,
+        # so the scalar is not sliced out of a longer payload.
+        if len(payload) == 33 and payload[-1] == 1:
+            compressed = True
+            secret = payload[:32]
+        elif len(payload) == 32:
+            compressed = False
+            secret = payload
+        else:
+            raise ValueError('WIF private key must be 32 bytes, or 33 bytes ending in 0x01')
     k.generate(secret)
     k.set_compressed(compressed)
     return k

@@ -49,11 +49,6 @@ XFAIL_IMPORT = (
     "WIF import decodes through str.decode('hex'), which Python 3 removed, "
     "so the compression flag and address are never checked"
 )
-XFAIL_INVALID_KEY = (
-    "out-of-range scalars and malformed WIF payloads are not rejected; "
-    "on Python 3 the decoder or get_secret crashes before that check"
-)
-
 # secp256k1 order. A private key must satisfy 1 <= scalar < n.
 SECP256K1_ORDER = (
     "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141"
@@ -451,13 +446,11 @@ def test_out_of_range_wif_rejected(wif):
         pytest.param(
             "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvHFRKf6",
             id="suffix-0x00",
-            marks=pytest.mark.xfail(reason=XFAIL_INVALID_KEY),
         ),
         # Same secret with a trailing 0x02.
         pytest.param(
             "KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvWxyf5d",
             id="suffix-0x02",
-            marks=pytest.mark.xfail(reason=XFAIL_INVALID_KEY),
         ),
         # 0x80 || the first 31 bytes of the wiki sample secret.
         pytest.param(
