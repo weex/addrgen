@@ -1,0 +1,2 @@
+# Test-only dependencies. addrgen.py itself has none.
+pytest>=8.3
